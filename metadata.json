@@ -1,0 +1,6 @@
+{
+  "name": "Obsidian Flux Monitor",
+  "description": "A high-precision system monitor for tracking URL health, latency, and uptime with real-time analytics and admin controls.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
