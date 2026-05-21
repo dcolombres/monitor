@@ -65,7 +65,8 @@ La interfaz debe respetar estrictamente la siguiente paleta de colores y estilos
 
 ## 📂 Archivos Clave del Proyecto
 El core de la aplicación se distribuye en los siguientes archivos modificados en la última compilación estable:
-*   `server.ts` (Configuración de Express y lógica del Proxy de peticiones).
+*   `server.ts` (Configuración de Express, lógica del Proxy de peticiones y persistencia de datos).
+*   `monitors.json` (Archivo de persistencia que almacena la configuración e historial de los monitores).
 *   `src/App.tsx` (Componente principal, ruteo interno, manejo de estado global de las URLs y layouts de las vistas).
 *   `src/index.css` (Configuración de estilos globales y variables de Tailwind v4).
 *   `src/types.ts` & `src/lib/utils.ts` (Tipados del monitor y funciones utilitarias).

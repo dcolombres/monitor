@@ -9,19 +9,51 @@ async function startServer() {
 
   app.use(express.json());
 
-  // In-memory data store for the demo
-  // In a real app, this would be a database
-  let monitors = [
-    { id: "1", name: "CAS GDE", url: "https://cas.gde.gob.ar" },
-    { id: "2", name: "Portal Nacional", url: "https://www.argentina.gob.ar" },
-    { id: "3", name: "BPM DNA2", url: "https://dna2.produccion.gob.ar/dna2bpm/user/login" }
-  ].map((m, i) => ({
-    ...m,
-    history: [] as any[],
-    lastCheck: null as Date | null,
-    status: "unknown" as "online" | "offline" | "unknown",
-    latency: null as number | null
-  }));
+  const DATA_DIR = path.join(process.cwd(), "data");
+  const DATA_FILE = path.join(DATA_DIR, "monitors.json");
+
+  // Ensure data directory exists
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+
+  // Load monitors from file or initialize with defaults
+  let monitors: any[] = [];
+  
+  const loadMonitors = () => {
+    try {
+      if (fs.existsSync(DATA_FILE)) {
+        const data = fs.readFileSync(DATA_FILE, "utf-8");
+        monitors = JSON.parse(data);
+      } else {
+        monitors = [
+          { id: "1", name: "CAS GDE", url: "https://cas.gde.gob.ar" },
+          { id: "2", name: "Portal Nacional", url: "https://www.argentina.gob.ar" },
+          { id: "3", name: "BPM DNA2", url: "https://dna2.produccion.gob.ar/dna2bpm/user/login" }
+        ].map(m => ({
+          ...m,
+          history: [],
+          lastCheck: null,
+          status: "unknown",
+          latency: null
+        }));
+        saveMonitors();
+      }
+    } catch (error) {
+      console.error("Error loading monitors:", error);
+      monitors = [];
+    }
+  };
+
+  const saveMonitors = () => {
+    try {
+      fs.writeFileSync(DATA_FILE, JSON.stringify(monitors, null, 2));
+    } catch (error) {
+      console.error("Error saving monitors:", error);
+    }
+  };
+
+  loadMonitors();
 
   // API Routes
   app.get("/api/monitors", (req, res) => {
@@ -41,11 +73,13 @@ async function startServer() {
       latency: null
     };
     monitors.push(newMonitor);
+    saveMonitors();
     res.json(newMonitor);
   });
 
   app.delete("/api/monitors/:id", (req, res) => {
     monitors = monitors.filter(m => m.id !== req.params.id);
+    saveMonitors();
     res.json({ success: true });
   });
 
@@ -75,6 +109,7 @@ async function startServer() {
       // Keep only last 50 checks
       if (monitor.history.length > 50) monitor.history.shift();
 
+      saveMonitors();
       res.json(monitor);
     } catch (error: any) {
       const end = Date.now();
@@ -88,6 +123,7 @@ async function startServer() {
         error: error.message
       });
       if (monitor.history.length > 50) monitor.history.shift();
+      saveMonitors();
       res.json(monitor);
     }
   });

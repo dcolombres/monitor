@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   LayoutDashboard, 
   BarChart3, 
@@ -22,12 +22,23 @@ import {
   ChevronRight,
   Loader2,
   CheckCircle2,
-  Info
+  Info,
+  Maximize,
+  X,
+  Cpu,
+  Zap,
+  Target,
+  Wifi,
+  Database,
+  Server,
+  ZapOff,
+  Play,
+  Pause
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, Cell, PieChart, Pie
+  BarChart, Bar, Cell, PieChart, Pie, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis
 } from 'recharts';
 import { cn } from './lib/utils';
 import { Monitor, View } from './types';
@@ -41,6 +52,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [countdown, setCountdown] = useState(REFRESH_INTERVAL);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [autoPlay, setAutoPlay] = useState(false);
 
   // Fetch initial monitors
   const fetchMonitors = useCallback(async () => {
@@ -77,23 +89,44 @@ export default function App() {
     setCountdown(REFRESH_INTERVAL);
   }, [fetchMonitors, checkHealth]);
 
-  // Initial load and timer
+  // Initial load
   useEffect(() => {
     refreshAll();
-  }, []);
+  }, [refreshAll]);
 
+  // Timer logic
   useEffect(() => {
     const timer = setInterval(() => {
       setCountdown(prev => {
-        if (prev <= 1) {
-          refreshAll();
-          return REFRESH_INTERVAL;
-        }
+        if (prev <= 1) return 0;
         return prev - 1;
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [refreshAll]);
+  }, []);
+
+  // Trigger refresh when countdown hits 0
+  useEffect(() => {
+    if (countdown === 0 && !isRefreshing) {
+      refreshAll();
+    }
+  }, [countdown, isRefreshing, refreshAll]);
+
+  // Rotation logic
+  useEffect(() => {
+    if (!autoPlay) return;
+    
+    const views: View[] = ['screensaver_cyber', 'screensaver_dev', 'screensaver_dashboard', 'screensaver_analytics'];
+    const timer = setInterval(() => {
+      setActiveView(current => {
+        const currentIndex = views.indexOf(current);
+        if (currentIndex === -1) return views[0];
+        return views[(currentIndex + 1) % views.length];
+      });
+    }, 60000); // 60 seconds rotation
+
+    return () => clearInterval(timer);
+  }, [autoPlay]);
 
   const stats = useMemo(() => {
     const online = monitors.filter(m => m.status === 'online').length;
@@ -103,8 +136,28 @@ export default function App() {
       ? monitors.reduce((acc, m) => acc + (m.latency || 0), 0) / monitors.length 
       : 0;
     
-    return { online, offline, total, avgLatency };
+    const sortedByLatency = [...monitors].filter(m => m.latency !== null).sort((a, b) => (b.latency || 0) - (a.latency || 0));
+    const slowest = sortedByLatency[0] || null;
+    const maxLatency = slowest ? slowest.latency : 0;
+    
+    return { online, offline, total, avgLatency, maxLatency, slowest };
   }, [monitors]);
+
+  if (activeView === 'screensaver_cyber') {
+    return <ScreensaverCyberView monitors={monitors} stats={stats} autoPlay={autoPlay} onToggleAutoPlay={() => setAutoPlay(!autoPlay)} onExit={() => {setActiveView('dashboard'); setAutoPlay(false);}} onSwitch={() => setActiveView('screensaver_dev')} />;
+  }
+
+  if (activeView === 'screensaver_dev') {
+    return <ScreensaverDevView monitors={monitors} stats={stats} autoPlay={autoPlay} onToggleAutoPlay={() => setAutoPlay(!autoPlay)} onExit={() => {setActiveView('dashboard'); setAutoPlay(false);}} onSwitch={() => setActiveView('screensaver_dashboard')} />;
+  }
+
+  if (activeView === 'screensaver_dashboard') {
+    return <ScreensaverDashboardView monitors={monitors} stats={stats} autoPlay={autoPlay} onToggleAutoPlay={() => setAutoPlay(!autoPlay)} onExit={() => {setActiveView('dashboard'); setAutoPlay(false);}} onSwitch={() => setActiveView('screensaver_analytics')} />;
+  }
+
+  if (activeView === 'screensaver_analytics') {
+    return <ScreensaverAnalyticsView monitors={monitors} stats={stats} autoPlay={autoPlay} onToggleAutoPlay={() => setAutoPlay(!autoPlay)} onExit={() => {setActiveView('dashboard'); setAutoPlay(false);}} onSwitch={() => setActiveView('screensaver_cyber')} />;
+  }
 
   return (
     <div className="flex h-screen bg-[#0a0b0e] text-[#cbd5e1] font-sans selection:bg-primary selection:text-on-primary">
@@ -210,6 +263,12 @@ export default function App() {
               >
                 <RefreshCw className="w-5 h-5" />
               </button>
+              <button 
+                onClick={() => setActiveView('screensaver_cyber')}
+                className="p-2 rounded hover:bg-[#1e2129] transition-colors text-slate-400"
+              >
+                <Maximize className="w-5 h-5" />
+              </button>
               <div className="h-10 w-10 rounded-lg border border-[#1e2129] p-0.5 bg-[#0a0b0e]">
                 <div className="h-full w-full rounded bg-primary/10 flex items-center justify-center font-bold text-primary text-xs">JD</div>
               </div>
@@ -220,9 +279,9 @@ export default function App() {
         {/* View Content */}
         <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
           <AnimatePresence mode="wait">
-            {activeView === 'dashboard' && <DashboardView monitors={monitors} stats={stats} onCheck={checkHealth} />}
-            {activeView === 'analytics' && <AnalyticsView monitors={monitors} stats={stats} />}
-            {activeView === 'admin' && <AdminView monitors={monitors} onAdd={fetchMonitors} onDelete={fetchMonitors} />}
+            {activeView === 'dashboard' && <DashboardView key="dashboard" monitors={monitors} stats={stats} onCheck={checkHealth} />}
+            {activeView === 'analytics' && <AnalyticsView key="analytics" monitors={monitors} stats={stats} />}
+            {activeView === 'admin' && <AdminView key="admin" monitors={monitors} onAdd={fetchMonitors} onDelete={fetchMonitors} />}
           </AnimatePresence>
         </div>
 
@@ -267,7 +326,7 @@ function SidebarLink({ icon, label, active, onClick }: { icon: React.ReactNode, 
   );
 }
 
-function DashboardView({ monitors, stats, onCheck }: { monitors: Monitor[], stats: any, onCheck: (id: string) => void }) {
+function DashboardView({ monitors, stats, onCheck }: { monitors: Monitor[], stats: any, onCheck: (id: string) => void, key?: string }) {
   const [page, setPage] = useState(0);
   const pageSize = 16;
   const currentMonitors = monitors.slice(page * pageSize, (page + 1) * pageSize);
@@ -277,18 +336,17 @@ function DashboardView({ monitors, stats, onCheck }: { monitors: Monitor[], stat
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -10 }}
-      className="space-y-6"
+      className="h-full flex flex-col gap-6 overflow-hidden"
     >
       {/* Top Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 shrink-0">
         <StatCard label="Endpoint Capacity" value={`${monitors.length}/128`} icon={<Globe className="text-slate-500 w-4 h-4" />} />
         <StatCard label="Online Status" value={stats.online} icon={<CheckCircle2 className="text-primary w-4 h-4" />} />
         <StatCard label="Critical Errors" value={stats.offline} icon={<AlertCircle className="text-error w-4 h-4" />} />
         <StatCard label="System Latency" value={`${Math.round(stats.avgLatency)}ms`} icon={<Clock className="text-tertiary w-4 h-4" />} />
       </div>
 
-      {/* Main Grid */}
-      <div className="flex items-center justify-between border-b border-[#1e2129] pb-4">
+      <div className="flex items-center justify-between border-b border-[#1e2129] pb-4 shrink-0">
         <h3 className="text-base font-bold flex items-center gap-3 text-white uppercase tracking-tight">
           Current Monitoring Group
           <span className="text-[10px] text-slate-500 font-mono font-normal tracking-normal border border-[#1e2129] px-2 py-0.5 rounded">NODE BUE-01</span>
@@ -311,12 +369,12 @@ function DashboardView({ monitors, stats, onCheck }: { monitors: Monitor[], stat
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 min-h-0">
         {currentMonitors.map(monitor => (
           <MonitorCard key={monitor.id} monitor={monitor} onCheck={() => onCheck(monitor.id)} />
         ))}
         {Array.from({ length: Math.max(0, pageSize - currentMonitors.length) }).map((_, i) => (
-          <div key={`empty-${i}`} className="bg-[#12141a] border border-slate-800/40 opacity-40 p-4 rounded-lg flex flex-col justify-center items-center border-dashed h-[140px]">
+          <div key={`empty-${i}`} className="bg-[#12141a] border border-slate-800/40 opacity-40 p-4 rounded-lg flex flex-col justify-center items-center border-dashed h-full">
             <div className="text-[10px] uppercase text-slate-600 font-bold tracking-widest">Empty Slot {i + 1 + currentMonitors.length}</div>
           </div>
         ))}
@@ -394,7 +452,7 @@ function MonitorCard({ monitor, onCheck }: { monitor: Monitor, onCheck: () => vo
 
 function AnalyticsView({ monitors, stats }: { monitors: Monitor[], stats: any }) {
   const rankingData = useMemo(() => {
-    return monitors
+    return [...monitors]
       .filter(m => m.latency !== null)
       .sort((a, b) => (a.latency || 0) - (b.latency || 0))
       .slice(0, 10);
@@ -415,7 +473,6 @@ function AnalyticsView({ monitors, stats }: { monitors: Monitor[], stats: any })
       className="space-y-6"
     >
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Access Time Ranking */}
         <div className="lg:col-span-8 p-6 rounded-lg border border-[#1e2129] bg-[#12141a]">
           <h3 className="text-sm font-bold uppercase tracking-widest text-white mb-8">Access Time Ranking (Best 10)</h3>
           <div className="h-[400px]">
@@ -438,7 +495,6 @@ function AnalyticsView({ monitors, stats }: { monitors: Monitor[], stats: any })
           </div>
         </div>
 
-        {/* Status Distribution */}
         <div className="lg:col-span-4 p-6 rounded-lg border border-[#1e2129] bg-[#12141a] flex flex-col">
           <h3 className="text-sm font-bold uppercase tracking-widest text-white mb-8">Status Distribution</h3>
           <div className="flex-1 min-h-[300px] flex flex-col items-center justify-center">
@@ -472,7 +528,6 @@ function AnalyticsView({ monitors, stats }: { monitors: Monitor[], stats: any })
         </div>
       </div>
 
-      {/* Latency Trends */}
       <div className="p-6 rounded-lg border border-[#1e2129] bg-[#12141a]">
         <h3 className="text-sm font-bold uppercase tracking-widest text-white mb-8">Overall Latency History</h3>
         <div className="h-[300px]">
@@ -540,7 +595,6 @@ function AdminView({ monitors, onAdd, onDelete }: { monitors: Monitor[], onAdd: 
       exit={{ opacity: 0, x: -20 }}
       className="grid grid-cols-1 xl:grid-cols-12 gap-8"
     >
-      {/* Configuration Form */}
       <div className="xl:col-span-4 space-y-6">
         <div className="p-6 rounded-lg border border-[#1e2129] bg-[#12141a]">
           <h3 className="text-sm font-bold uppercase tracking-widest text-primary mb-6 flex items-center gap-3">
@@ -583,7 +637,6 @@ function AdminView({ monitors, onAdd, onDelete }: { monitors: Monitor[], onAdd: 
         </div>
       </div>
 
-      {/* List Table */}
       <div className="xl:col-span-8 rounded-lg border border-[#1e2129] bg-[#12141a] overflow-hidden">
         <div className="p-6 border-b border-[#1e2129] bg-[#0a0b0e]/30">
           <h3 className="text-sm font-bold uppercase tracking-widest text-white">Monitored Endpoints</h3>
@@ -623,17 +676,712 @@ function AdminView({ monitors, onAdd, onDelete }: { monitors: Monitor[], onAdd: 
                   </td>
                 </tr>
               ))}
-              {monitors.length === 0 && (
-                <tr>
-                  <td colSpan={3} className="px-6 py-20 text-center text-slate-500 text-xs">
-                    No monitors found. Add your first one using the form.
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
         </div>
       </div>
     </motion.div>
+  );
+}
+
+function ScreensaverCyberView({ monitors, stats, autoPlay, onToggleAutoPlay, onExit, onSwitch }: { monitors: Monitor[], stats: any, autoPlay: boolean, onToggleAutoPlay: () => void, onExit: () => void, onSwitch: () => void }) {
+  const [time, setTime] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setTime(new Date()), 1000);
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onExit();
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('keydown', handleEsc);
+    };
+  }, [onExit]);
+
+  const availabilityData = [
+    { name: 'Online', value: stats.online },
+    { name: 'Offline', value: stats.offline },
+  ];
+  
+  const radarData = useMemo(() => {
+    return [
+      { subject: 'Availability', A: (stats.online / (stats.total || 1)) * 100, fullMark: 100 },
+      { subject: 'Latency', A: Math.max(0, 100 - (stats.avgLatency / 10)), fullMark: 100 },
+      { subject: 'Stability', A: 95, fullMark: 100 },
+      { subject: 'Coverage', A: (monitors.length / 128) * 100, fullMark: 100 },
+      { subject: 'Response', A: 88, fullMark: 100 },
+    ];
+  }, [stats, monitors]);
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 bg-[#0a0b0e] z-[100] flex flex-col p-10 overflow-hidden select-none grid-bg"
+    >
+      <div className="scanline" />
+      
+      <div className="flex justify-between items-center mb-10 border-b border-primary/20 pb-8 relative">
+        <div className="flex items-center gap-8">
+          <div className="relative">
+            <div className="absolute inset-0 bg-primary/20 blur-xl rounded-full animate-pulse" />
+            <Activity className="w-14 h-14 text-primary relative z-10" />
+          </div>
+          <div>
+            <div className="flex items-center gap-3 mb-1">
+              <h1 className="text-5xl font-black text-white tracking-tighter uppercase leading-none">
+                OBSIDIAN <span className="text-primary">FLUX</span>
+              </h1>
+              <div className="bg-primary/10 border border-primary/40 px-2 py-0.5 rounded text-[10px] text-primary font-bold animate-pulse">
+                LIVE NOC MODE (V1)
+              </div>
+            </div>
+            <div className="flex items-center gap-4 text-slate-500 font-mono text-xs tracking-[0.2em] uppercase">
+              <span>Security Node: BUE-P-01</span>
+              <span className="w-1 h-1 bg-slate-700 rounded-full" />
+              <span>Kernel v4.0.2-STABLE</span>
+              <span className="w-1 h-1 bg-slate-700 rounded-full" />
+              <span className="text-primary animate-pulse flex items-center gap-2" onClick={onSwitch}>
+                <RefreshCw className="w-3 h-3 cursor-pointer" /> Switch Aesthetic
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-10">
+          <button 
+            onClick={onToggleAutoPlay}
+            className={cn(
+              "flex items-center gap-3 px-6 py-3 rounded-xl border transition-all font-bold text-xs uppercase tracking-[0.2em]",
+              autoPlay 
+                ? "bg-primary/20 border-primary text-primary shadow-[0_0_15px_rgba(16,185,129,0.3)]" 
+                : "bg-[#12141a] border-[#1e2129] text-slate-500 hover:border-primary/50"
+            )}
+          >
+            {autoPlay ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
+            {autoPlay ? "Auto-Rotate ON" : "Start Rotation"}
+          </button>
+          <div className="text-right">
+            <div className="text-7xl font-mono text-white leading-none font-bold tracking-tighter mb-1 glow-green">
+              {time.toLocaleTimeString([], { hour12: false })}
+            </div>
+            <div className="text-xs text-slate-500 font-mono uppercase tracking-[0.4em]">
+              {time.toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+            </div>
+          </div>
+          <button 
+            onClick={onExit}
+            className="p-4 rounded-xl bg-[#12141a] border border-[#1e2129] text-slate-500 hover:text-white hover:border-primary transition-all group shadow-2xl"
+          >
+            <X className="w-8 h-8 group-hover:rotate-90 transition-transform" />
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 grid grid-cols-12 gap-10 min-h-0">
+        <div className="col-span-8 flex flex-col gap-10 min-h-0">
+          <div className="bg-[#12141a]/40 border border-[#1e2129] rounded-3xl p-8 backdrop-blur-md">
+            <div className="flex items-center justify-between mb-8">
+              <h2 className="text-sm font-bold uppercase tracking-[0.3em] text-slate-400 flex items-center gap-3">
+                <div className="w-1 h-4 bg-primary rounded-full shadow-[0_0_8px_rgba(16,185,129,1)]" />
+                Infrastructure Pulse Matrix
+              </h2>
+              <div className="text-[10px] font-mono text-slate-500">
+                CAPACITY: 128 ENDPOINTS | SCALE: 1:1
+              </div>
+            </div>
+            <div className="grid grid-cols-[repeat(16,minmax(0,1fr))] gap-3">
+              {Array.from({ length: 128 }).map((_, i) => {
+                const m = monitors[i];
+                const status = m ? m.status : 'empty';
+                return (
+                  <motion.div 
+                    key={i}
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    transition={{ delay: i * 0.005 }}
+                    className={cn(
+                      "aspect-square rounded-sm relative transition-all duration-700",
+                      status === 'online' ? "bg-primary shadow-[0_0_12px_rgba(16,185,129,0.4)]" :
+                      status === 'offline' ? "bg-error shadow-[0_0_12px_rgba(244,63,94,0.4)] animate-pulse" :
+                      status === 'unknown' ? "bg-slate-700 opacity-40" : "bg-[#1e2129] opacity-10"
+                    )}
+                  >
+                    {status === 'online' && <div className="absolute inset-0 bg-primary/20 animate-ping rounded-sm" />}
+                  </motion.div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="flex-1 flex flex-col min-h-0 bg-[#12141a]/20 border border-[#1e2129] rounded-3xl p-8 relative overflow-hidden">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-sm font-bold uppercase tracking-[0.3em] text-slate-400">Live Traffic Stream</h2>
+              <div className="flex gap-4">
+                <span className="text-[10px] font-bold text-primary px-2 py-1 bg-primary/10 rounded border border-primary/20">HTTP/2</span>
+                <span className="text-[10px] font-bold text-tertiary px-2 py-1 bg-tertiary/10 rounded border border-tertiary/20">SSL/TLS</span>
+              </div>
+            </div>
+            
+            <div className="flex-1 overflow-hidden relative">
+              <motion.div 
+                animate={{ y: monitors.length > 5 ? [0, -(monitors.length * 70)] : 0 }}
+                transition={{ 
+                  duration: Math.max(15, monitors.length * 1.5), 
+                  repeat: Infinity, 
+                  ease: "linear",
+                  repeatType: "loop"
+                }}
+                className="space-y-3"
+              >
+                {[...monitors, ...monitors].map((m, i) => (
+                  <div key={`${m.id}-${i}`} className="bg-[#0a0b0e]/60 border border-[#1e2129] p-4 rounded-xl flex items-center justify-between group hover:border-primary transition-colors border-l-4 border-l-primary/50">
+                    <div className="flex items-center gap-6">
+                      <div className="bg-[#12141a] p-2 rounded-lg border border-[#1e2129]">
+                        <Globe className={cn("w-5 h-5", m.status === 'online' ? "text-primary" : "text-error")} />
+                      </div>
+                      <div>
+                        <div className="text-base font-bold text-white uppercase tracking-tight">{m.name}</div>
+                        <div className="text-[10px] text-slate-500 font-mono tracking-tighter">{m.url}</div>
+                      </div>
+                    </div>
+                    <div className="flex gap-12 items-center">
+                      <div className="text-right">
+                        <div className="text-[9px] text-slate-500 uppercase font-bold tracking-widest mb-1">Status</div>
+                        <div className={cn("text-xs font-mono font-bold", m.status === 'online' ? "text-primary" : "text-error")}>
+                          {m.status === 'online' ? '● 200 OK' : '× 503 ERR'}
+                        </div>
+                      </div>
+                      <div className="text-right w-24">
+                        <div className="text-[9px] text-slate-500 uppercase font-bold tracking-widest mb-1">Latency</div>
+                        <div className={cn("text-xl font-mono font-black text-white leading-none")}>
+                          {m.latency || '---'}<span className="text-[10px] font-normal ml-0.5 opacity-40">ms</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </motion.div>
+              <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-[#0a0b0e] to-transparent z-10" />
+              <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-[#0a0b0e] to-transparent z-10" />
+            </div>
+          </div>
+        </div>
+
+        <div className="col-span-4 flex flex-col gap-10">
+          <div className="grid grid-cols-2 gap-6">
+            <StatHUD icon={<ShieldCheck className="text-primary" />} label="Uptime" value={`${Math.round((stats.online / (stats.total || 1)) * 100)}%`} color="primary" />
+            <StatHUD icon={<Zap className="text-tertiary" />} label="Avg Speed" value={`${Math.round(stats.avgLatency)}ms`} color="tertiary" />
+            <StatHUD icon={<Target className="text-white" />} label="Endpoints" value={stats.total} color="white" />
+            <StatHUD icon={<ZapOff className="text-error" />} label="Slowest" value={`${Math.round(stats.maxLatency)}ms`} color="error" />
+          </div>
+
+          <div className="flex-1 bg-[#12141a]/40 border border-[#1e2129] rounded-3xl p-8 backdrop-blur-md flex flex-col">
+            <h3 className="text-xs font-bold uppercase tracking-[0.3em] text-slate-400 mb-8 flex items-center gap-3">
+              <Cpu className="w-4 h-4 text-primary" />
+              Infrastructure Stability Radar
+            </h3>
+            <div className="flex-1">
+              <ResponsiveContainer width="100%" height="100%">
+                <RadarChart cx="50%" cy="50%" outerRadius="80%" data={radarData}>
+                  <PolarGrid stroke="#1e2129" />
+                  <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 10, fontWeight: 'bold' }} />
+                  <Radar
+                    name="System"
+                    dataKey="A"
+                    stroke="#10b981"
+                    fill="#10b981"
+                    fillOpacity={0.3}
+                  />
+                </RadarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="bg-[#12141a]/40 border border-[#1e2129] rounded-3xl p-8 backdrop-blur-md">
+            <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400 mb-6">Resource Allocation</h3>
+            <div className="flex items-center gap-8">
+              <div className="w-40 h-40">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={availabilityData}
+                      innerRadius="65%"
+                      outerRadius="85%"
+                      paddingAngle={10}
+                      dataKey="value"
+                    >
+                      <Cell fill="#10b981" stroke="none" />
+                      <Cell fill="#f43f5e" stroke="none" />
+                    </Pie>
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="flex-1 space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase">Operational</span>
+                  <span className="text-lg font-mono font-bold text-primary">{stats.online}</span>
+                </div>
+                <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
+                  <motion.div className="h-full bg-primary" animate={{ width: `${(stats.online / stats.total) * 100}%` }} />
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase">Degraded</span>
+                  <span className="text-lg font-mono font-bold text-error">{stats.offline}</span>
+                </div>
+                <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
+                  <motion.div className="h-full bg-error" animate={{ width: `${(stats.offline / stats.total) * 100}%` }} />
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-[#12141a]/40 border border-[#1e2129] rounded-3xl p-8 backdrop-blur-md h-48">
+            <h3 className="text-[10px] font-bold uppercase tracking-[0.3em] text-slate-500 mb-4">Signal Spectrum Analysis</h3>
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={monitors[0]?.history || []}>
+                <defs>
+                  <linearGradient id="cyberGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.4}/>
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <Area type="step" dataKey="latency" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#cyberGradient)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-10 h-10 border border-primary/20 bg-primary/5 rounded-xl flex items-center px-6 overflow-hidden">
+        <div className="flex items-center gap-4 text-primary shrink-0 mr-8 font-bold text-[10px] uppercase tracking-widest border-r border-primary/20 pr-8">
+          <Server className="w-4 h-4" />
+          System Log
+        </div>
+        <motion.div 
+          animate={{ x: [1000, -2000] }}
+          transition={{ duration: 30, repeat: Infinity, ease: "linear" }}
+          className="whitespace-nowrap flex gap-16 text-[11px] font-mono text-slate-400 uppercase tracking-tight"
+        >
+          <span>[{new Date().toISOString()}] WARN: Node BUE-01 experienced 0.05% packet loss on upstream</span>
+          <span>[{new Date().toISOString()}] INFO: Load balancer re-weighted group ARG-CENTRAL</span>
+          <span>[{new Date().toISOString()}] CRIT: {stats.slowest?.name || 'Unknown'} latency threshold exceeded: {stats.maxLatency}ms</span>
+          <span>[{new Date().toISOString()}] SUCCESS: All global caches synchronized across 12 clusters</span>
+        </motion.div>
+      </div>
+    </motion.div>
+  );
+}
+
+function ScreensaverDevView({ monitors, stats, autoPlay, onToggleAutoPlay, onExit, onSwitch }: { monitors: Monitor[], stats: any, autoPlay: boolean, onToggleAutoPlay: () => void, onExit: () => void, onSwitch: () => void }) {
+  const [time, setTime] = useState(new Date());
+  const [selectedMonitorId, setSelectedMonitorId] = useState<string | null>(null);
+
+  const selectedMonitor = useMemo(() => 
+    monitors.find(m => m.id === selectedMonitorId), 
+  [monitors, selectedMonitorId]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setTime(new Date()), 1000);
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (selectedMonitorId) setSelectedMonitorId(null);
+        else onExit();
+      }
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('keydown', handleEsc);
+    };
+  }, [onExit, selectedMonitorId]);
+
+  const histogramData = useMemo(() => {
+    const bins = Array(10).fill(0);
+    monitors.forEach(m => {
+      if (m.latency !== null) {
+        const binIndex = Math.min(Math.floor(m.latency / 100), 9);
+        bins[binIndex]++;
+      }
+    });
+    return bins.map((val, i) => ({ range: `${i*100}-${(i+1)*100}ms`, count: val }));
+  }, [monitors]);
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 bg-[#05070a] z-[100] flex flex-col p-8 font-mono text-cyan-500/80 overflow-hidden select-none border-[20px] border-[#0a0b0e]"
+    >
+      <div className="flex justify-between items-start mb-8 border-b border-cyan-900/50 pb-6">
+        <div className="flex gap-10">
+          <div>
+            <div className="text-[10px] text-cyan-700 uppercase tracking-[0.4em] mb-1">Architecture Node</div>
+            <div className="text-2xl font-bold text-cyan-100 tracking-tighter">DEV-CLUSTER-ALPHA</div>
+          </div>
+          <div className="w-px h-10 bg-cyan-900/50" />
+          <div>
+            <div className="text-[10px] text-cyan-700 uppercase tracking-[0.4em] mb-1">Global Health</div>
+            <div className="text-2xl font-bold text-white flex items-center gap-3">
+              {Math.round((stats.online / stats.total) * 100)}%
+              <div className="flex gap-1">
+                {Array.from({ length: 10 }).map((_, i) => (
+                  <div key={i} className={cn("w-1.5 h-4 rounded-sm", i < (stats.online / stats.total) * 10 ? "bg-cyan-500" : "bg-cyan-950")} />
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-10">
+          <button 
+            onClick={onToggleAutoPlay}
+            className={cn(
+              "flex items-center gap-3 px-5 py-2 rounded border transition-all font-bold text-[10px] uppercase tracking-widest",
+              autoPlay 
+                ? "bg-cyan-500/20 border-cyan-500 text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.2)]" 
+                : "bg-cyan-950/30 border-cyan-900/50 text-cyan-700 hover:text-cyan-400"
+            )}
+          >
+            {autoPlay ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
+            {autoPlay ? "CAROUSEL_ACTIVE" : "START_CAROUSEL"}
+          </button>
+          <div className="text-right">
+            <div className="text-5xl font-bold text-white leading-none mb-1 tracking-tighter">
+              {time.toLocaleTimeString([], { hour12: false })}
+            </div>
+            <div className="text-[10px] text-cyan-700 uppercase tracking-[0.5em]">SYSTEM_EPOCH_{Math.floor(time.getTime()/1000)}</div>
+          </div>
+          <button onClick={onExit} className="p-2 border border-cyan-900 hover:border-cyan-500 transition-all text-cyan-900 hover:text-cyan-100">
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 grid grid-cols-12 gap-8 min-h-0 relative">
+        <div className="col-span-3 flex flex-col gap-6 bg-cyan-950/10 border border-cyan-900/30 p-6 rounded-lg">
+          <h2 className="text-[10px] font-bold uppercase tracking-widest text-cyan-600 mb-2 border-l-2 border-cyan-500 pl-3">Service Dependency Map</h2>
+          <div className="flex-1 overflow-y-auto custom-scrollbar space-y-4 text-[11px]">
+            <div className="pl-0 text-cyan-300">▼ root.cluster.production</div>
+            <div className="pl-4 text-cyan-500">├─ load_balancer_bue_01</div>
+            <div className="pl-8 text-cyan-600 space-y-2">
+              {monitors.map(m => (
+                <div 
+                  key={m.id} 
+                  onClick={() => setSelectedMonitorId(m.id)}
+                  className={cn(
+                    "flex items-center gap-3 group cursor-pointer hover:bg-cyan-500/10 p-1 rounded transition-colors",
+                    selectedMonitorId === m.id && "bg-cyan-500/20 text-white"
+                  )}
+                >
+                  <span className="text-cyan-900">└─</span>
+                  <span className={cn(
+                    m.status === 'online' ? "text-cyan-400" : "text-amber-500 animate-pulse",
+                    selectedMonitorId === m.id && "text-white font-bold"
+                  )}>
+                    {m.name.toLowerCase().replace(/\s+/g, '_')}.service
+                  </span>
+                  <Activity className={cn("w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity", selectedMonitorId === m.id && "opacity-100")} />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="col-span-6 flex flex-col gap-8 min-h-0">
+          <div className="h-1/2 bg-cyan-950/10 border border-cyan-900/30 p-6 rounded-lg">
+            <h2 className="text-[10px] font-bold uppercase tracking-widest text-cyan-600 mb-6">Latency Distribution (Histogram)</h2>
+            <ResponsiveContainer width="100%" height="80%">
+              <BarChart data={histogramData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#083344" vertical={false} />
+                <XAxis dataKey="range" stroke="#083344" fontSize={10} />
+                <YAxis stroke="#083344" fontSize={10} />
+                <Tooltip 
+                  cursor={{ fill: 'rgba(6, 182, 212, 0.05)' }}
+                  contentStyle={{ backgroundColor: '#05070a', border: '1px solid #083344', borderRadius: '4px' }}
+                />
+                <Bar dataKey="count" fill="#06b6d4" opacity={0.6} radius={[2, 2, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="flex-1 bg-black border border-cyan-900/50 p-4 rounded font-mono text-[10px] overflow-hidden relative">
+            <div className="absolute top-2 right-4 text-cyan-900 animate-pulse uppercase tracking-[0.3em]">Live_Telemetry_Stream</div>
+            <div className="space-y-1">
+              {Array.from({ length: 20 }).map((_, i) => {
+                const randomMon = monitors[Math.floor(Math.random() * monitors.length)];
+                return (
+                  <div key={i} className="flex gap-4 opacity-40 hover:opacity-100 transition-opacity">
+                    <span className="text-cyan-900">[{new Date().toISOString().split('T')[1]}]</span>
+                    <span className="text-cyan-700">GET</span>
+                    <span className="text-cyan-100">{randomMon?.url || '---'}</span>
+                    <span className="text-cyan-500">{randomMon?.latency || 0}ms</span>
+                    <span className="text-cyan-900">200_OK_SUCCESS</span>
+                  </div>
+                );
+              })}
+              <motion.div 
+                animate={{ opacity: [1, 0] }}
+                transition={{ repeat: Infinity, duration: 0.8 }}
+                className="w-2 h-4 bg-cyan-500 inline-block"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="col-span-3 flex flex-col gap-6 bg-cyan-950/10 border border-cyan-900/30 p-6 rounded-lg overflow-hidden relative">
+          <AnimatePresence mode="wait">
+            {!selectedMonitor ? (
+              <motion.div 
+                key="stats"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="flex flex-col h-full"
+              >
+                <h2 className="text-[10px] font-bold uppercase tracking-widest text-cyan-600 mb-4">Core_Kernel_Metrics</h2>
+                <div className="space-y-6">
+                  <DevStat label="Average_Response" value={`${Math.round(stats.avgLatency)}ms`} unit="latency" />
+                  <DevStat label="Peak_Response" value={`${Math.round(stats.maxLatency)}ms`} unit="max_lat" />
+                  <DevStat label="Operational_Nodes" value={stats.online} unit="nodes" />
+                  <DevStat label="Degraded_Nodes" value={stats.offline} unit="errors" color="amber" />
+                </div>
+
+                <div className="mt-auto border-t border-cyan-900/50 pt-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="text-[9px] uppercase text-cyan-800">Resource_Saturation</span>
+                    <span className="text-[10px] text-cyan-400">74.2%</span>
+                  </div>
+                  <div className="h-1.5 w-full bg-cyan-950 rounded-full overflow-hidden">
+                    <motion.div 
+                      initial={{ width: 0 }}
+                      animate={{ width: '74.2%' }}
+                      className="h-full bg-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.8)]"
+                    />
+                  </div>
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div 
+                key="details"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="flex flex-col h-full"
+              >
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-[10px] font-bold uppercase tracking-widest text-white">Node_Telemetry_Detail</h2>
+                  <button onClick={() => setSelectedMonitorId(null)} className="text-cyan-700 hover:text-white transition-colors">
+                    [CLOSE_X]
+                  </button>
+                </div>
+                
+                <div className="space-y-4 flex-1">
+                  <div className="bg-black/40 border border-cyan-900/50 p-4 rounded">
+                    <div className="text-[9px] text-cyan-700 uppercase mb-2">Service_Identity</div>
+                    <div className="text-sm font-bold text-cyan-100 mb-1">{selectedMonitor.name}</div>
+                    <div className="text-[10px] text-cyan-600 break-all">{selectedMonitor.url}</div>
+                  </div>
+
+                  <div className="bg-black/40 border border-cyan-900/50 p-4 rounded">
+                    <div className="text-[9px] text-cyan-700 uppercase mb-2">Health_Descriptor</div>
+                    <div className="flex items-center gap-4">
+                      <div className={cn(
+                        "w-3 h-3 rounded-full shadow-[0_0_8px]",
+                        selectedMonitor.status === 'online' ? "bg-cyan-500 shadow-cyan-500" : "bg-amber-500 shadow-amber-500"
+                      )} />
+                      <div className="text-lg font-bold text-white uppercase">{selectedMonitor.status}</div>
+                    </div>
+                  </div>
+
+                  <div className="bg-black/40 border border-cyan-900/50 p-4 rounded flex-1">
+                    <div className="text-[9px] text-cyan-700 uppercase mb-4">Latency_History (24H)</div>
+                    <div className="h-32">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={selectedMonitor.history}>
+                          <Area 
+                            type="step" 
+                            dataKey="latency" 
+                            stroke="#06b6d4" 
+                            fill="#06b6d4" 
+                            fillOpacity={0.1} 
+                            strokeWidth={1} 
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  <div className="text-[9px] text-cyan-900 mt-4 leading-relaxed">
+                    FETCH_SIGNAL: {new Date(selectedMonitor.lastCheck || '').toLocaleString()}<br/>
+                    NODE_AFFINITY: BUE-P-01<br/>
+                    MTU_SIZE: 1500<br/>
+                    PROXIED: TRUE
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+
+      <div className="mt-8 flex justify-between items-center text-[9px] text-cyan-900 uppercase tracking-[0.5em]">
+        <div>Obsidian_Monitor // Kernel_v4.0.2 // Build_2026.05.21</div>
+        <div className="flex gap-8">
+          <span>Mem: 4.2GB / 16GB</span>
+          <span>CPU: 12.4%</span>
+          <span>Net: 842Mbps</span>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function ScreensaverDashboardView({ monitors, stats, autoPlay, onToggleAutoPlay, onExit, onSwitch }: { monitors: Monitor[], stats: any, autoPlay: boolean, onToggleAutoPlay: () => void, onExit: () => void, onSwitch: () => void }) {
+  const [time, setTime] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setTime(new Date()), 1000);
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onExit();
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('keydown', handleEsc);
+    };
+  }, [onExit]);
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 bg-[#0a0b0e] z-[100] flex flex-col p-10 overflow-hidden select-none grid-bg"
+    >
+      <div className="flex justify-between items-center mb-10 border-b border-white/10 pb-8">
+        <div className="flex items-center gap-6">
+          <LayoutDashboard className="w-12 h-12 text-white" />
+          <h1 className="text-4xl font-black text-white tracking-tighter uppercase leading-none">
+            Infrastructure <span className="text-slate-500">Overview</span>
+          </h1>
+        </div>
+        <div className="flex items-center gap-8">
+          <button 
+            onClick={onToggleAutoPlay}
+            className={cn(
+              "flex items-center gap-3 px-6 py-3 rounded-xl border transition-all font-bold text-xs uppercase tracking-[0.2em]",
+              autoPlay ? "bg-white/10 border-white text-white shadow-[0_0_15px_rgba(255,255,255,0.1)]" : "bg-[#12141a] border-[#1e2129] text-slate-500"
+            )}
+          >
+            {autoPlay ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
+            {autoPlay ? "ROULETTE ACTIVE" : "START ROULETTE"}
+          </button>
+          <div className="text-right">
+            <div className="text-6xl font-mono text-white leading-none font-bold tracking-tighter">{time.toLocaleTimeString([], { hour12: false })}</div>
+          </div>
+          <button onClick={onExit} className="p-4 rounded-xl bg-[#12141a] border border-[#1e2129] text-slate-500 hover:text-white"><X className="w-8 h-8" /></button>
+        </div>
+      </div>
+      <div className="flex-1 overflow-hidden p-4">
+        <DashboardView monitors={monitors} stats={stats} onCheck={() => {}} />
+      </div>
+    </motion.div>
+  );
+}
+
+function ScreensaverAnalyticsView({ monitors, stats, autoPlay, onToggleAutoPlay, onExit, onSwitch }: { monitors: Monitor[], stats: any, autoPlay: boolean, onToggleAutoPlay: () => void, onExit: () => void, onSwitch: () => void }) {
+  const [time, setTime] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setTime(new Date()), 1000);
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onExit();
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('keydown', handleEsc);
+    };
+  }, [onExit]);
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 bg-[#0a0b0e] z-[100] flex flex-col p-10 overflow-hidden select-none grid-bg"
+    >
+      <div className="flex justify-between items-center mb-10 border-b border-tertiary/20 pb-8">
+        <div className="flex items-center gap-6">
+          <BarChart3 className="w-12 h-12 text-tertiary" />
+          <h1 className="text-4xl font-black text-white tracking-tighter uppercase leading-none">
+            Deep <span className="text-tertiary">Analytics</span>
+          </h1>
+        </div>
+        <div className="flex items-center gap-8">
+          <button 
+            onClick={onToggleAutoPlay}
+            className={cn(
+              "flex items-center gap-3 px-6 py-3 rounded-xl border transition-all font-bold text-xs uppercase tracking-[0.2em]",
+              autoPlay ? "bg-tertiary/20 border-tertiary text-tertiary shadow-[0_0_15px_rgba(245,158,11,0.2)]" : "bg-[#12141a] border-[#1e2129] text-slate-500"
+            )}
+          >
+            {autoPlay ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
+            {autoPlay ? "AUTO-SCROLL ON" : "START SCROLL"}
+          </button>
+          <div className="text-right text-6xl font-mono text-white font-bold tracking-tighter">{time.toLocaleTimeString([], { hour12: false })}</div>
+          <button onClick={onExit} className="p-4 rounded-xl bg-[#12141a] border border-[#1e2129] text-slate-500 hover:text-white"><X className="w-8 h-8" /></button>
+        </div>
+      </div>
+      <div className="flex-1 overflow-hidden p-4">
+        <AnalyticsView monitors={monitors} stats={stats} />
+      </div>
+    </motion.div>
+  );
+}
+
+function StatHUD({ icon, label, value, color }: { icon: React.ReactNode, label: string, value: string | number, color: string }) {
+  const colors: Record<string, string> = {
+    primary: "text-primary border-primary/20 shadow-primary/10",
+    tertiary: "text-tertiary border-tertiary/20 shadow-tertiary/10",
+    error: "text-error border-error/20 shadow-error/10",
+    white: "text-white border-white/20 shadow-white/5"
+  };
+
+  return (
+    <div className={cn(
+      "p-6 rounded-3xl bg-[#12141a]/60 border backdrop-blur-md relative overflow-hidden group hover:scale-105 transition-all duration-300",
+      colors[color]
+    )}>
+      <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+        {icon}
+      </div>
+      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">{label}</p>
+      <div className="flex items-baseline gap-2">
+        <p className="text-3xl font-mono font-black text-white tracking-tighter">{value}</p>
+      </div>
+    </div>
+  );
+}
+
+function DevStat({ label, value, unit, color = 'cyan' }: { label: string, value: string | number, unit: string, color?: string }) {
+  const colors: any = {
+    cyan: "text-cyan-400",
+    amber: "text-amber-500"
+  };
+  
+  return (
+    <div className="group">
+      <div className="text-[9px] text-cyan-900 uppercase tracking-widest mb-1">{label}</div>
+      <div className="flex items-baseline gap-2">
+        <div className={cn("text-2xl font-bold tracking-tighter", colors[color])}>{value}</div>
+        <div className="text-[9px] text-cyan-900">[{unit}]</div>
+      </div>
+      <div className={cn("h-0.5 w-0 group-hover:w-full transition-all duration-500", color === 'cyan' ? 'bg-cyan-900' : 'bg-amber-900')} />
+    </div>
   );
 }

@@ -16,4 +16,4 @@ export interface Monitor {
   history: MonitorHistory[];
 }
 
-export type View = 'dashboard' | 'analytics' | 'admin';
+export type View = 'dashboard' | 'analytics' | 'admin' | 'screensaver_cyber' | 'screensaver_dev' | 'screensaver_dashboard' | 'screensaver_analytics';
